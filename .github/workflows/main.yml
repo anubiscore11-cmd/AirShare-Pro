@@ -1,0 +1,296 @@
+name: Convertir HTML en APK
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Récupérer le code du dépôt
+        uses: actions/checkout@v4
+
+      - name: 2. Configurer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 3. Créer l'architecture propre
+        run: |
+          mkdir -p android-app/app/src/main/assets/www
+          mkdir -p android-app/app/src/main/java/com/airshare/pro
+          mkdir -p android-app/app/src/main/res/layout
+          mkdir -p android-app/app/src/main/res/values
+          mkdir -p android-app/app/src/main/res/xml
+
+      - name: 4. Injecter l'interface web (index.html)
+        run: |
+          cat << 'EOF' > android-app/app/src/main/assets/www/index.html
+          <!DOCTYPE html>
+          <html lang="fr">
+          <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+          <meta name="color-scheme" content="dark">
+          <title>AirShare Pro</title>
+          <style>
+            *, *::before, *::after {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+              -webkit-tap-highlight-color: transparent;
+              user-select: none;
+            }
+            :root {
+              --bg-amoled:       #050508;
+              --glass-bg:        rgba(255, 255, 255, 0.06);
+              --glass-bg-hover:  rgba(255, 255, 255, 0.12);
+              --glass-border:    rgba(255, 255, 255, 0.08);
+            }
+            html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg-amoled); color: #ffffff; font-family: -apple-system, sans-serif; }
+            .app { display: flex; flex-direction: column; height: 100%; padding: 40px 20px; }
+            .header-title { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 24px; }
+            .mode-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 30px; }
+            .mode-btn { padding: 20px; border-radius: 18px; background: var(--glass-bg); border: 1.5px solid var(--glass-border); text-align: center; }
+            .mode-btn.active { border-color: rgba(255, 255, 255, 0.4); background: var(--glass-bg-hover); }
+            .drop-zone { flex: 1; border-radius: 24px; background: rgba(255,255,255,0.02); border: 2px dashed var(--glass-border); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+          </style>
+          <script>
+            function triggerFilePicker() { if(window.Android) { window.Android.openFilePicker(); } }
+            function selectMode(btn, mode) { 
+              document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active')); 
+              btn.classList.add('active');
+              if(window.Android) { window.Android.showToast("Mode " + mode + " activé"); }
+            }
+          </script>
+          </head>
+          <body>
+            <div class="app">
+              <div class="header-title">⚡ AirShare Pro</div>
+              <div class="mode-grid">
+                <div class="mode-btn active" onclick="selectMode(this, 'Wi-Fi')"><div style="font-size:24px;">📶</div><div>Wi-Fi</div></div>
+                <div class="mode-btn" onclick="selectMode(this, 'Hotspot')"><div style="font-size:24px;">🔥</div><div>Hotspot</div></div>
+                <div class="mode-btn" onclick="selectMode(this, 'Bluetooth')"><div style="font-size:24px;">🔵</div><div>Bluetooth</div></div>
+                <div class="mode-btn" onclick="selectMode(this, 'Câble')"><div style="font-size:24px;">🔌</div><div>Câble</div></div>
+              </div>
+              <div class="drop-zone" onclick="triggerFilePicker()">
+                <div style="font-size:40px; margin-bottom:12px;">📂</div>
+                <div><b>Sélectionner un fichier</b></div>
+                <div style="font-size:13px; opacity:0.5; margin-top:6px;">Partage local ultra-fluide</div>
+              </div>
+            </div>
+          </body>
+          </html>
+          EOF
+
+      - name: 5. Générer l'interface native et FileProvider
+        run: |
+          cat << 'EOF' > android-app/app/src/main/res/layout/activity_main.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#050508">
+              <WebView
+                  android:id="@+id/webView"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent" />
+          </RelativeLayout>
+          EOF
+
+          cat << 'EOF' > android-app/app/src/main/res/xml/file_provider_paths.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <paths>
+              <external-path name="external_files" path="."/>
+              <cache-path name="cache_files" path="."/>
+          </paths>
+          EOF
+
+      - name: 6. Configurer Gradle et Dépendances AndroidX
+        run: |
+          echo "include ':app'" > android-app/settings.gradle
+          echo "android.useAndroidX=true" > android-app/gradle.properties
+          echo "android.enableJetifier=true" >> android-app/gradle.properties
+
+          cat << 'EOF' > android-app/build.gradle
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          EOF
+
+          cat << 'EOF' > android-app/app/build.gradle
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.airshare.pro'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.airshare.pro"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
+
+      - name: 7. Injecter le Manifest sécurisé
+        run: |
+          cat << 'EOF' > android-app/app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="AirShare Pro"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <provider
+                      android:name="androidx.core.content.FileProvider"
+                      android:authorities="com.airshare.pro.fileprovider"
+                      android:exported="false"
+                      android:grantUriPermissions="true">
+                      <meta-data
+                          android:name="android.support.FILE_PROVIDER_PATHS"
+                          android:resource="@xml/file_provider_paths" />
+                  </provider>
+              </application>
+          </manifest>
+          EOF
+
+      - name: 8. Injecter le MainActivity autonome (Pont JS stable)
+        run: |
+          cat << 'EOF' > android-app/app/src/main/java/com/airshare/pro/MainActivity.java
+          package com.airshare.pro;
+
+          import android.Manifest;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.webkit.JavascriptInterface;
+          import android.widget.Toast;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.core.app.ActivityCompat;
+
+          public class MainActivity extends AppCompatActivity {
+
+              private WebView webView;
+              private ValueCallback<Uri[]> filePathCallback;
+              private final static int REQUEST_FILE_PICKER = 1002;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  setContentView(R.layout.activity_main);
+
+                  webView = findViewById(R.id.webView);
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
+                          MainActivity.this.filePathCallback = filePathCallback;
+                          Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                          intent.addCategory(Intent.CATEGORY_OPENABLE);
+                          intent.setType("*/*");
+                          startActivityForResult(Intent.createChooser(intent, "Choisir un fichier"), REQUEST_FILE_PICKER);
+                          return true;
+                      }
+                  });
+
+                  webView.addJavascriptInterface(new Object() {
+                      @JavascriptInterface
+                      public void openFilePicker() {
+                          runOnUiThread(() -> {
+                              Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                              intent.addCategory(Intent.CATEGORY_OPENABLE);
+                              intent.setType("*/*");
+                              startActivityForResult(Intent.createChooser(intent, "Choisir un fichier"), REQUEST_FILE_PICKER);
+                          });
+                      }
+                      @JavascriptInterface
+                      public void showToast(String message) {
+                          runOnUiThread(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show());
+                      }
+                  }, "Android");
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                      ActivityCompat.requestPermissions(this, new String[]{
+                              Manifest.permission.BLUETOOTH_SCAN,
+                              Manifest.permission.BLUETOOTH_CONNECT
+                      }, 1001);
+                  }
+
+                  webView.loadUrl("file:///android_asset/www/index.html");
+              }
+
+              @Override
+              protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  if (requestCode == REQUEST_FILE_PICKER) {
+                      if (filePathCallback == null) return;
+                      Uri[] results = null;
+                      if (resultCode == RESULT_OK && data != null) {
+                          String dataString = data.getDataString();
+                          if (dataString != null) {
+                              results = new Uri[]{Uri.parse(dataString)};
+                          }
+                      }
+                      filePathCallback.onReceiveValue(results);
+                      filePathCallback = null;
+                  } else {
+                      super.onActivityResult(requestCode, resultCode, data);
+                  }
+              }
+          }
+          EOF
+
+      - name: 9. Compiler l'APK AirShare Pro
+        run: |
+          cd android-app
+          gradle wrapper --gradle-version 8.5
+          ./gradlew assembleRelease
+
+      - name: 10. Télécharger l'APK Final AirShare Pro
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirShare-Pro-Final-App
+          path: android-app/app/build/outputs/apk/release/app-release.apk
