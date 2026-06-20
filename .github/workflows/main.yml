@@ -1,0 +1,125 @@
+name: Convertir HTML en APK
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Recuperer le code du depot
+        uses: actions/checkout@v4
+
+      - name: 2. Configurer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 3. Creer la structure Android de base
+        run: |
+          mkdir -p android-app/app/src/main/assets/www
+          mkdir -p android-app/app/src/main/java/com/airshare/pro
+          mkdir -p android-app/app/src/main/res/layout
+          mkdir -p android-app/app/src/main/res/values
+          mkdir -p android-app/app/src/main/res/xml
+
+      - name: 4. Deplacer tes fichiers au bon endroit
+        run: |
+          # Si tes fichiers sont a la racine, le script les deplace dans l'application
+          [ -f index.html ] && cp index.html android-app/app/src/main/assets/www/index.html || echo "index.html absent"
+          [ -f MainActivity.java ] && cp MainActivity.java android-app/app/src/main/java/com/airshare/pro/MainActivity.java || echo "MainActivity.java absent"
+          [ -f AndroidManifest.xml ] && cp AndroidManifest.xml android-app/app/src/main/AndroidManifest.xml || echo "AndroidManifest.xml absent"
+
+      - name: 5. Generer l'interface visuelle et les ressources minimales
+        run: |
+          cat << 'EOF' > android-app/app/src/main/res/layout/activity_main.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#050508">
+              <WebView
+                  android:id="@+id/webView"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent" />
+          </RelativeLayout>
+          EOF
+
+          cat << 'EOF' > android-app/app/src/main/res/xml/file_provider_paths.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <paths>
+              <external-path name="external_files" path="."/>
+              <cache-path name="cache_files" path="."/>
+          </paths>
+          EOF
+
+      - name: 6. Configurer Gradle et les dependances AndroidX
+        run: |
+          echo "include ':app'" > android-app/settings.gradle
+          echo "android.useAndroidX=true" > android-app/gradle.properties
+          echo "android.enableJetifier=true" >> android-app/gradle.properties
+
+          cat << 'EOF' > android-app/build.gradle
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          EOF
+
+          cat << 'EOF' > android-app/app/build.gradle
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.airshare.pro'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.airshare.pro"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'androidx.core:core:1.12.0'
+          }
+          EOF
+
+      - name: 7. Generer l'icone de l'application
+        run: |
+          mkdir -p android-app/app/src/main/res/mipmap-anydpi-v26
+          cat << 'EOF' > android-app/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+          cat << 'EOF' > android-app/app/src/main/res/values/colors.xml
+          <?xml version="1.0" encoding="utf-8"?><resources><color name="ic_launcher_background">#050508</color></resources>
+          EOF
+          cat << 'EOF' > android-app/app/src/main/res/drawable/ic_launcher_foreground.xml
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:pathData="M34,44 L66,44 L54,32 M66,44 L54,56" android:strokeWidth="6" android:strokeLineCap="round" android:strokeLineJoin="round"><aapt:attr name="android:strokeColor" xmlns:aapt="http://schemas.android.com/aapt"><gradient android:startX="34" android:startY="44" android:endX="66" android:endY="44" android:type="linear"><item android:offset="0.0" android:color="#FF2563EB"/><item android:offset="1.0" android:color="#FF6366F1"/></gradient></aapt:attr></path></vector>
+          EOF
+
+      - name: 8. Compiler l'APK
+        run: |
+          cd android-app
+          gradle wrapper --gradle-version 8.5
+          ./gradlew assembleRelease
+
+      - name: 9. Telecharger l'APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirShare-Pro-Final
+          path: android-app/app/build/outputs/apk/release/app-release.apk
