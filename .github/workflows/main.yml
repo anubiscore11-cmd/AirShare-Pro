@@ -1,0 +1,478 @@
+name: Convertir HTML en APK
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Recuperer le code du depot
+        uses: actions/checkout@v4
+
+      - name: 2. Configurer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 3. Creer l'architecture de l'app Android
+        run: |
+          mkdir -p android-app/app/src/main/assets/www
+          mkdir -p android-app/app/src/main/java/com/airshare/app
+
+      - name: 4. Injecter le code index.html (iOS 26 Glassmorphism UI)
+        run: |
+          cat << 'EOF' > android-app/app/src/main/assets/www/index.html
+          <!DOCTYPE html>
+          <html lang="fr">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+              <title>AirShare Pro</title>
+              <style>
+                  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+                  body {
+                      background: #050508;
+                      color: #ffffff;
+                      font-family: -apple-system, SF Pro Display, Roboto, sans-serif;
+                      display: flex;
+                      flex-direction: column;
+                      height: 100vh;
+                      overflow: hidden;
+                      padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom) 20px;
+                  }
+                  header {
+                      text-align: center;
+                      padding: 30px 0 10px 0;
+                  }
+                  h1 {
+                      font-size: 28px;
+                      font-weight: 700;
+                      background: linear-gradient(135deg, #ffffff 30%, #a5b4fc 100%);
+                      -webkit-background-clip: text;
+                      -webkit-text-fill-color: transparent;
+                      letter-spacing: -0.5px;
+                  }
+                  .status-badge {
+                      display: inline-block;
+                      margin-top: 8px;
+                      padding: 4px 12px;
+                      border-radius: 20px;
+                      font-size: 12px;
+                      font-weight: 600;
+                      background: rgba(255, 255, 255, 0.06);
+                      border: 1px solid rgba(255, 255, 255, 0.1);
+                      backdrop-filter: blur(10px);
+                      color: #34d399;
+                  }
+                  .grid-modes {
+                      display: grid;
+                      grid-template-columns: repeat(2, 1fr);
+                      gap: 16px;
+                      margin-top: 20px;
+                  }
+                  .mode-card {
+                      background: rgba(255, 255, 255, 0.03);
+                      border: 1px solid rgba(255, 255, 255, 0.08);
+                      border-radius: 24px;
+                      padding: 20px;
+                      text-align: center;
+                      backdrop-filter: blur(30px);
+                      -webkit-backdrop-filter: blur(30px);
+                      will-change: transform;
+                      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                  }
+                  .mode-card:active {
+                      transform: scale(0.95);
+                  }
+                  .mode-icon { font-size: 28px; margin-bottom: 8px; }
+                  .mode-title { font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.9); }
+                  
+                  .main-dropzone {
+                      flex: 1;
+                      margin: 24px 0;
+                      background: rgba(255, 255, 255, 0.02);
+                      border: 1.5px dashed rgba(255, 255, 255, 0.15);
+                      border-radius: 32px;
+                      display: flex;
+                      flex-direction: column;
+                      align-items: center;
+                      justify-content: center;
+                      padding: 20px;
+                      backdrop-filter: blur(30px);
+                  }
+                  .file-info {
+                      margin-top: 12px;
+                      font-size: 14px;
+                      color: #a5b4fc;
+                      text-align: center;
+                  }
+                  .progress-section {
+                      width: 100%;
+                      background: rgba(255,255,255,0.03);
+                      border: 1px solid rgba(255,255,255,0.08);
+                      border-radius: 20px;
+                      padding: 16px;
+                      margin-bottom: 16px;
+                      display: none;
+                  }
+                  .progress-bar-bg {
+                      width: 100%;
+                      height: 6px;
+                      background: rgba(255,255,255,0.1);
+                      border-radius: 3px;
+                      overflow: hidden;
+                      margin-top: 10px;
+                  }
+                  .progress-bar-fill {
+                      width: 45%;
+                      height: 100%;
+                      background: linear-gradient(90deg, #2563eb, #ec4899);
+                      border-radius: 3px;
+                  }
+                  .action-buttons {
+                      display: flex;
+                      gap: 16px;
+                      margin-bottom: 20px;
+                  }
+                  .btn {
+                      flex: 1;
+                      padding: 18px;
+                      border-radius: 24px;
+                      font-size: 16px;
+                      font-weight: 600;
+                      text-align: center;
+                      border: none;
+                      cursor: pointer;
+                  }
+                  .btn-receive {
+                      background: rgba(255, 255, 255, 0.06);
+                      color: #ffffff;
+                      border: 1px solid rgba(255, 255, 255, 0.1);
+                      backdrop-filter: blur(20px);
+                  }
+                  .btn-send {
+                      background: #ffffff;
+                      color: #050508;
+                  }
+              </style>
+          </head>
+          <body>
+              <header>
+                  <h1>AirShare Pro</h1>
+                  <div class="status-badge" id="status">Système Opérationnel</div>
+              </header>
+
+              <div class="grid-modes">
+                  <div class="mode-card" onclick="selectMode('Wi-Fi')">
+                      <div class="mode-icon">📶</div>
+                      <div class="mode-title">Réseau Wi-Fi</div>
+                  </div>
+                  <div class="mode-card" onclick="selectMode('Hotspot')">
+                      <div class="mode-icon">🔥</div>
+                      <div class="mode-title">Point d'accès</div>
+                  </div>
+                  <div class="mode-card" onclick="selectMode('Bluetooth')">
+                      <div class="mode-icon">🔷</div>
+                      <div class="mode-title">Bluetooth</div>
+                  </div>
+                  <div class="mode-card" onclick="selectMode('Câble')">
+                      <div class="mode-icon">🔌</div>
+                      <div class="mode-title">Câble USB</div>
+                  </div>
+              </div>
+
+              <div class="main-dropzone" onclick="triggerFileSelect()">
+                  <div style="font-size: 40px; opacity: 0.7;">📥</div>
+                  <p style="margin-top:12px; font-size:15px; opacity:0.8;">Sélectionner un fichier</p>
+                  <div class="file-info" id="fileName">Aucun fichier choisi</div>
+                  <input type="file" id="hiddenInput" style="display:none;" onchange="fileChosen(this)">
+              </div>
+
+              <div class="progress-section" id="progressArea">
+                  <div style="display:flex; justify-content:space-between; font-size:13px; opacity:0.8;">
+                      <span>Envoi en cours...</span>
+                      <span id="speedRate">45 MB/s</span>
+                  </div>
+                  <div class="progress-bar-bg"><div class="progress-bar-fill"></div></div>
+              </div>
+
+              <div class="action-buttons">
+                  <button class="btn btn-receive" onclick="actionReceive()">📥 Recevoir</button>
+                  <button class="btn btn-send" onclick="triggerFileSelect()">📤 Envoyer</button>
+              </div>
+
+              <script>
+                  function selectMode(mode) {
+                      document.getElementById('status').innerText = 'Mode : ' + mode;
+                      if(window.AndroidInterface && window.AndroidInterface.logAction) {
+                          window.AndroidInterface.logAction("Changement de mode vers : " + mode);
+                      }
+                  }
+                  function triggerFileSelect() {
+                      document.getElementById('hiddenInput').click();
+                  }
+                  function fileChosen(input) {
+                      if(input.files && input.files[0]) {
+                          let file = input.files[0];
+                          let sizeMB = (file.size / (1024*1024)).toFixed(2);
+                          document.getElementById('fileName').innerText = file.name + ' (' + sizeMB + ' MB)';
+                          document.getElementById('progressArea').style.display = 'block';
+                          document.getElementById('status').innerText = 'Prêt à transférer';
+                      }
+                  }
+                  function actionReceive() {
+                      document.getElementById('status').innerText = 'Recherche d\'appareils...';
+                  }
+              </script>
+          </body>
+          </html>
+          EOF
+
+      - name: 5. Generer les configurations de build Android natif
+        run: |
+          echo "include ':app'" > android-app/settings.gradle
+
+          cat << 'EOF' > android-app/build.gradle
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          EOF
+
+          cat << 'EOF' > android-app/app/build.gradle
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.airshare.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.airshare.app"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+          EOF
+
+      - name: 6. Injecter l'AndroidManifest.xml (Permissions Android 13+)
+        run: |
+          cat << 'EOF' > android-app/app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <!-- Permissions Wi-Fi et Réseau étendues -->
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+              <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
+
+              <!-- Permissions Bluetooth Android 13+ Strictes -->
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+
+              <!-- Autorisation d'accès aux fichiers média -->
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:label="AirShare Pro"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+      - name: 7. Injecter le MainActivity.java (Pont Javascript et Sélecteur Web)
+        run: |
+          cat << 'EOF' > android-app/app/src/main/java/com/airshare/app/MainActivity.java
+          package com.airshare.app;
+
+          import android.Manifest;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.Toast;
+          import androidx.core.app.ActivityCompat;
+
+          public class MainActivity extends Activity {
+
+              private WebView mWebView;
+              private ValueCallback<Uri[]> mUploadMessage;
+              private final static int FILECHOOSER_RESULTCODE = 1;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  mWebView = new WebView(this);
+                  setContentView(mWebView);
+
+                  WebSettings webSettings = mWebView.getSettings();
+                  webSettings.setJavaScriptEnabled(true);
+                  webSettings.setDomStorageEnabled(true);
+                  webSettings.setAllowFileAccess(true);
+
+                  mWebView.setWebViewClient(new WebViewClient());
+                  
+                  // Interface Javascript pour communiquer avec le HTML
+                  mWebView.addJavascriptInterface(new Object() {
+                      @JavascriptInterface
+                      public void logAction(String text) {
+                          Toast.makeText(MainActivity.this, text, Toast.LENGTH_SHORT).show();
+                      }
+                  }, "AndroidInterface");
+
+                  // Gérer l'ouverture du gestionnaire de fichiers natif
+                  mWebView.setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
+                          if (mUploadMessage != null) {
+                              mUploadMessage.onReceiveValue(null);
+                          }
+                          mUploadMessage = filePathCallback;
+
+                          Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                          intent.addCategory(Intent.CATEGORY_OPENABLE);
+                          intent.setType("*/*");
+                          startActivityForResult(Intent.createChooser(intent, "Choisir un fichier"), FILECHOOSER_RESULTCODE);
+                          return true;
+                      }
+                  });
+
+                  // Demander les permissions critiques dès l'ouverture
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                      ActivityCompat.requestPermissions(this, new String[]{
+                              Manifest.permission.NEARBY_WIFI_DEVICES,
+                              Manifest.permission.BLUETOOTH_SCAN,
+                              Manifest.permission.BLUETOOTH_CONNECT,
+                              Manifest.permission.READ_MEDIA_IMAGES,
+                              Manifest.permission.READ_MEDIA_VIDEO,
+                              Manifest.permission.READ_MEDIA_AUDIO
+                      }, 100);
+                  } else {
+                      ActivityCompat.requestPermissions(this, new String[]{
+                              Manifest.permission.ACCESS_FINE_LOCATION
+                      }, 100);
+                  }
+
+                  mWebView.loadUrl("file:///android_asset/www/index.html");
+              }
+
+              @Override
+              protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  if (requestCode == FILECHOOSER_RESULTCODE) {
+                      if (mUploadMessage == null) return;
+                      Uri[] results = null;
+                      if (resultCode == Activity.RESULT_OK && data != null) {
+                          String dataString = data.getDataString();
+                          if (dataString != null) {
+                              results = new Uri[]{Uri.parse(dataString)};
+                          }
+                      }
+                      mUploadMessage.onReceiveValue(results);
+                      mUploadMessage = null;
+                  } else {
+                      super.onActivityResult(requestCode, resultCode, data);
+                  }
+              }
+          }
+          EOF
+
+      - name: 8. Generer l'icone adaptative iOS 26 Glassmorphism
+        run: |
+          mkdir -p android-app/app/src/main/res/mipmap-anydpi-v26
+          mkdir -p android-app/app/src/main/res/values
+          mkdir -p android-app/app/src/main/res/drawable
+
+          cat << 'EOF' > android-app/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+
+          cat << 'EOF' > android-app/app/src/main/res/values/colors.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#050508</color>
+          </resources>
+          EOF
+
+          cat << 'EOF' > android-app/app/src/main/res/drawable/ic_launcher_foreground.xml
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:aapt="http://schemas.android.com/aapt"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:pathData="M34,44 L66,44 L54,32 M66,44 L54,56"
+                  android:strokeWidth="6"
+                  android:strokeLineCap="round"
+                  android:strokeLineJoin="round">
+                  <aapt:attr name="android:strokeColor">
+                      <gradient android:startX="34" android:startY="44" android:endX="66" android:endY="44" android:type="linear">
+                          <item android:offset="0.0" android:color="#FF2563EB"/>
+                          <item android:offset="1.0" android:color="#FF6366F1"/>
+                      </gradient>
+                  </aapt:attr>
+              </path>
+              <path
+                  android:pathData="M74,64 L42,64 L54,76 M42,64 L54,52"
+                  android:strokeWidth="6"
+                  android:strokeLineCap="round"
+                  android:strokeLineJoin="round">
+                  <aapt:attr name="android:strokeColor">
+                      <gradient android:startX="74" android:startY="64" android:endX="42" android:endY="64" android:type="linear">
+                          <item android:offset="0.0" android:color="#FFEC4899"/>
+                          <item android:offset="1.0" android:color="#FF6366F1"/>
+                      </gradient>
+                  </aapt:attr>
+              </path>
+          </vector>
+          EOF
+
+      - name: 9. Compiler l'APK AirShare Pro Real
+        run: |
+          cd android-app
+          gradle wrapper --gradle-version 8.5
+          ./gradlew assembleRelease
+
+      - name: 10. Telecharger l'APK Final AirShare Pro
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirShare-Pro-Final-App
+          path: android-app/app/build/outputs/apk/release/app-release.apk
